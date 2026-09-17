@@ -108,20 +108,109 @@ class Interpolator1DPCP(Interpolator1D):
         assert self.extrap_method_ == ExtrapMethod.FLAT
 
     def interpolate(self, x: float) -> float:
-        #TODO
-        pass
+        """Return the node value for the piecewise-constant left-continuous interpolant.
+
+        Convention:
+        - flat extrapolation outside the axis range
+        - for x exactly on a node, return that node's value
+        - otherwise on the interval (axis[i-1], axis[i]], use values[i]
+        """
+        x = float(x)
+
+        if x <= self.axis1_[0]:
+            return float(self.values_[0])
+        if x >= self.axis1_[-1]:
+            return float(self.values_[-1])
+
+        exact_match = np.isclose(self.axis1_, x)
+        if np.any(exact_match):
+            idx = int(np.where(exact_match)[0][0])
+            return float(self.values_[idx])
+
+        idx = int(np.searchsorted(self.axis1_, x, side='right'))
+        return float(self.values_[idx])
 
     def integrate(self, start_x: float, end_x: float) -> float:
-        #TODO
-        pass
+        """Integrate the piecewise-constant interpolant over [start_x, end_x]."""
+        if end_x < start_x:
+            return -self.integrate(end_x, start_x)
+
+        total = 0.0
+
+        # Left flat wing.
+        if start_x <= self.axis1_[0]:
+            left_overlap = min(end_x, self.axis1_[0]) - start_x
+            if left_overlap > 0:
+                total += float(self.values_[0]) * left_overlap
+            start_x = max(start_x, self.axis1_[0])
+
+        # Right flat wing.
+        if end_x >= self.axis1_[-1]:
+            right_overlap = end_x - max(start_x, self.axis1_[-1])
+            if right_overlap > 0:
+                total += float(self.values_[-1]) * right_overlap
+            end_x = min(end_x, self.axis1_[-1])
+
+        # Interior buckets: value is constant on (axis1[i-1], axis1[i]] with the level at values[i].
+        for i in range(1, len(self.axis1_)):
+            left = self.axis1_[i - 1]
+            right = self.axis1_[i]
+            overlap_left = max(start_x, left)
+            overlap_right = min(end_x, right)
+            if overlap_right > overlap_left:
+                total += float(self.values_[i]) * (overlap_right - overlap_left)
+
+        return float(total)
 
     def gradient_wrt_ordinate(self, x: float) -> np.ndarray:
-        #TODO
-        pass
+        """Gradient of the interpolated value with respect to the ordinate values."""
+        grad = np.zeros(len(self.values_), dtype=float)
+
+        if x <= self.axis1_[0]:
+            grad[0] = 1.0
+            return grad
+        if x >= self.axis1_[-1]:
+            grad[-1] = 1.0
+            return grad
+
+        exact_match = np.isclose(self.axis1_, x)
+        if np.any(exact_match):
+            idx = int(np.where(exact_match)[0][0])
+            grad[idx] = 1.0
+            return grad
+
+        idx = int(np.searchsorted(self.axis1_, x, side='right'))
+        grad[idx] = 1.0
+        return grad
 
     def gradient_of_integrated_value_wrt_ordinate(self, start_x: float, end_x: float) -> np.ndarray:
-        #TODO
-        pass
+        """Gradient of the integral over [start_x, end_x] with respect to the ordinate values."""
+        if end_x < start_x:
+            return -self.gradient_of_integrated_value_wrt_ordinate(end_x, start_x)
+
+        grad = np.zeros(len(self.values_), dtype=float)
+
+        if start_x <= self.axis1_[0]:
+            overlap = min(end_x, self.axis1_[0]) - start_x
+            if overlap > 0:
+                grad[0] += overlap
+            start_x = max(start_x, self.axis1_[0])
+
+        if end_x >= self.axis1_[-1]:
+            overlap = end_x - max(start_x, self.axis1_[-1])
+            if overlap > 0:
+                grad[-1] += overlap
+            end_x = min(end_x, self.axis1_[-1])
+
+        for i in range(1, len(self.axis1_)):
+            left = self.axis1_[i - 1]
+            right = self.axis1_[i]
+            overlap_left = max(start_x, left)
+            overlap_right = min(end_x, right)
+            if overlap_right > overlap_left:
+                grad[i] += overlap_right - overlap_left
+
+        return grad
 
 
 class InterpolatorFactory:
